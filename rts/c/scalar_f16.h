@@ -12,7 +12,8 @@
 #if !defined(cl_khr_fp16) && \
      !(defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 600) && \
      !(defined(__HIP_DEVICE_COMPILE__)) && \
-     !(defined(ISPC))
+     !(defined(ISPC)) && \
+     !(defined(FUTHARK_METAL))
 #define EMULATE_F16
 #endif
 
@@ -83,7 +84,7 @@ SCALAR_FUN_ATTR bool cmple16(f16 x, f16 y) { return x <= y; }
 
 #endif
 
-#ifdef __OPENCL_VERSION__
+#if defined(__OPENCL_VERSION__) || defined(FUTHARK_METAL)
 
 SCALAR_FUN_ATTR f16 fabs16(f16 x) { return fabs(x); }
 SCALAR_FUN_ATTR f16 fmax16(f16 x, f16 y) { return fmax(x, y); }
@@ -239,6 +240,56 @@ SCALAR_FUN_ATTR f16 futrts_copysign16(f16 x, f16 y) { return futrts_copysign32((
 SCALAR_FUN_ATTR f16 futrts_mad16(f16 a, f16 b, f16 c) { return a * b + c; }
 SCALAR_FUN_ATTR f16 futrts_fma16(f16 a, f16 b, f16 c) { return a * b + c; }
 
+#elif defined(FUTHARK_METAL)
+
+// MSL math functions are overloaded for half (MSL spec section 6.6).
+// The ones MSL lacks (log1p, cbrt, hypot, gamma, lgamma, erf, erfc)
+// delegate to the f32 definitions in scalar.h.
+SCALAR_FUN_ATTR f16 futrts_log16(f16 x) { return log(x); }
+SCALAR_FUN_ATTR f16 futrts_log2_16(f16 x) { return log2(x); }
+SCALAR_FUN_ATTR f16 futrts_log10_16(f16 x) { return log10(x); }
+SCALAR_FUN_ATTR f16 futrts_log1p_16(f16 x) { return (f16)futrts_log1p_32((float)x); }
+SCALAR_FUN_ATTR f16 futrts_sqrt16(f16 x) { return sqrt(x); }
+SCALAR_FUN_ATTR f16 futrts_rsqrt16(f16 x) { return rsqrt(x); }
+SCALAR_FUN_ATTR f16 futrts_cbrt16(f16 x) { return (f16)futrts_cbrt32((float)x); }
+SCALAR_FUN_ATTR f16 futrts_exp16(f16 x) { return exp(x); }
+SCALAR_FUN_ATTR f16 futrts_cos16(f16 x) { return cos(x); }
+SCALAR_FUN_ATTR f16 futrts_cospi16(f16 x) { return cospi(x); }
+SCALAR_FUN_ATTR f16 futrts_sin16(f16 x) { return sin(x); }
+SCALAR_FUN_ATTR f16 futrts_sinpi16(f16 x) { return sinpi(x); }
+SCALAR_FUN_ATTR f16 futrts_tan16(f16 x) { return tan(x); }
+SCALAR_FUN_ATTR f16 futrts_tanpi16(f16 x) { return tanpi(x); }
+SCALAR_FUN_ATTR f16 futrts_acos16(f16 x) { return acos(x); }
+SCALAR_FUN_ATTR f16 futrts_acospi16(f16 x) { return acos(x) / M_PI_H; }
+SCALAR_FUN_ATTR f16 futrts_asin16(f16 x) { return asin(x); }
+SCALAR_FUN_ATTR f16 futrts_asinpi16(f16 x) { return asin(x) / M_PI_H; }
+SCALAR_FUN_ATTR f16 futrts_atan16(f16 x) { return atan(x); }
+SCALAR_FUN_ATTR f16 futrts_atanpi16(f16 x) { return atan(x) / M_PI_H; }
+SCALAR_FUN_ATTR f16 futrts_cosh16(f16 x) { return cosh(x); }
+SCALAR_FUN_ATTR f16 futrts_sinh16(f16 x) { return sinh(x); }
+SCALAR_FUN_ATTR f16 futrts_tanh16(f16 x) { return tanh(x); }
+SCALAR_FUN_ATTR f16 futrts_acosh16(f16 x) { return acosh(x); }
+SCALAR_FUN_ATTR f16 futrts_asinh16(f16 x) { return asinh(x); }
+SCALAR_FUN_ATTR f16 futrts_atanh16(f16 x) { return atanh(x); }
+SCALAR_FUN_ATTR f16 futrts_atan2_16(f16 x, f16 y) { return atan2(x, y); }
+SCALAR_FUN_ATTR f16 futrts_atan2pi_16(f16 x, f16 y) { return atan2(x, y) / M_PI_H; }
+SCALAR_FUN_ATTR f16 futrts_hypot16(f16 x, f16 y) { return (f16)futrts_hypot32((float)x, (float)y); }
+SCALAR_FUN_ATTR f16 futrts_gamma16(f16 x) { return (f16)futrts_gamma32((float)x); }
+SCALAR_FUN_ATTR f16 futrts_lgamma16(f16 x) { return (f16)futrts_lgamma32((float)x); }
+SCALAR_FUN_ATTR f16 futrts_erf16(f16 x) { return (f16)futrts_erf32((float)x); }
+SCALAR_FUN_ATTR f16 futrts_erfc16(f16 x) { return (f16)futrts_erfc32((float)x); }
+SCALAR_FUN_ATTR f16 fmod16(f16 x, f16 y) { return fmod(x, y); }
+SCALAR_FUN_ATTR f16 futrts_round16(f16 x) { return rint(x); }
+SCALAR_FUN_ATTR f16 futrts_floor16(f16 x) { return floor(x); }
+SCALAR_FUN_ATTR f16 futrts_ceil16(f16 x) { return ceil(x); }
+// nextafter is native MSL (for half too) since Metal 3.1.
+SCALAR_FUN_ATTR f16 futrts_nextafter16(f16 x, f16 y) { return nextafter(x, y); }
+SCALAR_FUN_ATTR f16 futrts_lerp16(f16 v0, f16 v1, f16 t) { return mix(v0, v1, t); }
+SCALAR_FUN_ATTR f16 futrts_ldexp16(f16 x, int32_t y) { return ldexp(x, y); }
+SCALAR_FUN_ATTR f16 futrts_copysign16(f16 x, f16 y) { return copysign(x, y); }
+SCALAR_FUN_ATTR f16 futrts_mad16(f16 a, f16 b, f16 c) { return a * b + c; }
+SCALAR_FUN_ATTR f16 futrts_fma16(f16 a, f16 b, f16 c) { return fma(a, b, c); }
+
 #else // Assume CUDA.
 
 SCALAR_FUN_ATTR f16 futrts_log16(f16 x) { return hlog(x); }
@@ -292,6 +343,9 @@ SCALAR_FUN_ATTR f16 futrts_fma16(f16 a, f16 b, f16 c) { return fmaf(a, b, c); }
 #ifdef __CUDA_ARCH__
 SCALAR_FUN_ATTR int16_t fptobits_f16_i16(f16 x) { return __half_as_ushort(x); }
 SCALAR_FUN_ATTR f16 bitstofp_i16_f16(int16_t x) { return __ushort_as_half(x); }
+#elif defined(FUTHARK_METAL)
+SCALAR_FUN_ATTR int16_t fptobits_f16_i16(f16 x) { return as_type<int16_t>(x); }
+SCALAR_FUN_ATTR f16 bitstofp_i16_f16(int16_t x) { return as_type<half>(x); }
 #elif defined(ISPC)
 SCALAR_FUN_ATTR int16_t fptobits_f16_i16(f16 x) { varying int16_t y = *((varying int16_t * uniform)&x); return y;
 }

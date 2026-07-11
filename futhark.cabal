@@ -46,6 +46,7 @@ extra-source-files:
     rts/c/backends/cuda.h
     rts/c/backends/hip.h
     rts/c/backends/multicore.h
+    rts/c/backends/metal.h
     rts/c/backends/opencl.h
     rts/c/lock.h
     rts/c/copy.h
@@ -67,6 +68,10 @@ extra-source-files:
     rts/c/util.h
     rts/c/server.h
     rts/cuda/prelude.cu
+    rts/metal/prelude.metal
+    rts/metal/shim.cpp
+    rts/metal/metal-cpp/**/*.hpp
+    rts/metal/metal-cpp/VENDORED.txt
     rts/style.css
     rts/javascript/server.js
     rts/javascript/values.js
@@ -164,6 +169,7 @@ library
       Futhark.CLI.HIP
       Futhark.CLI.Literate
       Futhark.CLI.LSP
+      Futhark.CLI.Metal
       Futhark.CLI.Main
       Futhark.CLI.Misc
       Futhark.CLI.Multicore
@@ -181,6 +187,7 @@ library
       Futhark.CLI.Test
       Futhark.CLI.WASM
       Futhark.CodeGen.Backends.CCUDA
+      Futhark.CodeGen.Backends.CMetal
       Futhark.CodeGen.Backends.COpenCL
       Futhark.CodeGen.Backends.HIP
       Futhark.CodeGen.Backends.GenericC
@@ -211,6 +218,7 @@ library
       Futhark.CodeGen.Backends.SimpleRep
       Futhark.CodeGen.RTS.C
       Futhark.CodeGen.RTS.CUDA
+      Futhark.CodeGen.RTS.Metal
       Futhark.CodeGen.RTS.OpenCL
       Futhark.CodeGen.RTS.Python
       Futhark.CodeGen.RTS.JavaScript
@@ -221,6 +229,7 @@ library
       Futhark.CodeGen.ImpCode.Sequential
       Futhark.CodeGen.ImpGen
       Futhark.CodeGen.ImpGen.CUDA
+      Futhark.CodeGen.ImpGen.Metal
       Futhark.CodeGen.ImpGen.GPU
       Futhark.CodeGen.ImpGen.GPU.Base
       Futhark.CodeGen.ImpGen.GPU.Block

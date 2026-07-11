@@ -1,0 +1,12 @@
+Vendored copy of metal-cpp (Apple's C++ bindings for Metal).
+
+Source:  https://github.com/bkaradzic/metal-cpp
+         (mirror of Apple's official metal-cpp releases)
+Commit:  c9727bc9468a90d7ea8fc89d5ee03b8d8992a570
+Release: "metal-cpp for macOS27, iOS27"
+Date vendored: 2026-07-11
+
+Only the header trees Foundation/, Metal/ and QuartzCore/ (plus
+LICENSE.txt and README.md) are vendored; samples, SingleHeader/ and
+MetalFX/ are omitted.  See rts/metal/DESIGN.md for how these headers
+are located at build time (-I, overridable via FUTHARK_METAL_CPP).

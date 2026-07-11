@@ -18,6 +18,7 @@ module Futhark.Actions
     compileOpenCLAction,
     compileCUDAAction,
     compileHIPAction,
+    compileMetalAction,
     compileMulticoreAction,
     compileMulticoreToISPCAction,
     compileMulticoreToWASMAction,
@@ -42,7 +43,9 @@ import Futhark.Analysis.Interference qualified as Interference
 import Futhark.Analysis.LastUse qualified as LastUse
 import Futhark.Analysis.MemAlias qualified as MemAlias
 import Futhark.Analysis.Metrics
+import Data.ByteString qualified as BS
 import Futhark.CodeGen.Backends.CCUDA qualified as CCUDA
+import Futhark.CodeGen.Backends.CMetal qualified as CMetal
 import Futhark.CodeGen.Backends.COpenCL qualified as COpenCL
 import Futhark.CodeGen.Backends.HIP qualified as HIP
 import Futhark.CodeGen.Backends.MulticoreC qualified as MulticoreC
@@ -53,6 +56,7 @@ import Futhark.CodeGen.Backends.SequentialC qualified as SequentialC
 import Futhark.CodeGen.Backends.SequentialPython qualified as SequentialPy
 import Futhark.CodeGen.Backends.SequentialWASM qualified as SequentialWASM
 import Futhark.CodeGen.ImpGen.GPU qualified as ImpGenGPU
+import Futhark.CodeGen.RTS.Metal (metalCppFiles, shimCppMetal)
 import Futhark.CodeGen.ImpGen.Multicore qualified as ImpGenMulticore
 import Futhark.CodeGen.ImpGen.Sequential qualified as ImpGenSequential
 import Futhark.Compiler.CLI
@@ -66,6 +70,7 @@ import Futhark.Util (runProgramWithExitCode, unixEnvironment)
 import Futhark.Util.Pretty (Doc, pretty, putDocLn, (</>))
 import Futhark.Version (versionString)
 import System.Directory
+import System.Environment (lookupEnv)
 import System.Exit
 import System.FilePath hiding ((</>))
 import System.Info qualified
@@ -418,6 +423,102 @@ compileHIPAction fcfg mode outpath =
         ToServer -> do
           liftIO $ T.writeFile cpath $ cPrependHeader $ HIP.asServer cprog
           runCC cpath outpath ["-O", "-std=c99"] ("-lm" : extra_options)
+
+cmdCXX :: String
+cmdCXX = fromMaybe "c++" $ lookup "CXX" unixEnvironment
+
+cmdCXXFLAGS :: [String] -> [String]
+cmdCXXFLAGS def = maybe def words $ lookup "CXXFLAGS" unixEnvironment
+
+-- | Write the vendored metal-cpp headers to a cache directory (unless
+-- already present) and return the include path to use.  The
+-- FUTHARK_METAL_CPP environment variable overrides this with an
+-- external metal-cpp checkout.
+materialiseMetalCpp :: FutharkM FilePath
+materialiseMetalCpp = liftIO $ do
+  override <- lookupEnv "FUTHARK_METAL_CPP"
+  case override of
+    Just dir -> pure dir
+    Nothing -> do
+      cache <- getXdgDirectory XdgCache $ joinPath ["futhark", "metal-cpp"]
+      forM_ metalCppFiles $ \(f, bs) -> do
+        let path = joinPath [cache, f]
+        exists <- doesFileExist path
+        unless exists $ do
+          createDirectoryIfMissing True (takeDirectory path)
+          BS.writeFile path bs
+      pure cache
+
+-- Like 'runCC', but for the Metal backend's two-translation-unit
+-- build: the generated C program plus the metal-cpp shim (C++17),
+-- linked against the Metal frameworks.
+runMetalCC :: String -> String -> String -> [String] -> [String] -> [String] -> FutharkM ()
+runMetalCC cpath shimpath outpath cflags_def cxxflags ldflags = do
+  let c_obj = cpath `addExtension` "o"
+      shim_obj = shimpath `addExtension` "o"
+      run prog args = liftIO $ runProgramWithExitCode prog args mempty
+      check prog ret cont = case ret of
+        Left err ->
+          externalErrorS $ "Failed to run " ++ prog ++ ": " ++ show err
+        Right (ExitFailure code, _, err) ->
+          externalErrorS $
+            prog ++ " failed with code " ++ show code ++ ":\n" ++ err
+        Right (ExitSuccess, _, _) -> cont
+  ret_c <- run cmdCC $ ["-c", cpath, "-o", c_obj] ++ cmdCFLAGS cflags_def
+  check cmdCC ret_c $ do
+    ret_cxx <- run cmdCXX $ ["-c", shimpath, "-o", shim_obj] ++ cmdCXXFLAGS cxxflags
+    check cmdCXX ret_cxx $ do
+      ret_ld <- run cmdCC $ [c_obj, shim_obj, "-o", outpath] ++ ldflags
+      check cmdCC ret_ld $ pure ()
+
+-- | The @futhark metal@ action.
+compileMetalAction :: FutharkConfig -> CompilerMode -> FilePath -> Action GPUMem
+compileMetalAction fcfg mode outpath =
+  Action
+    { actionName = "Compile to Metal",
+      actionDescription = "Compile to Metal",
+      actionProcedure = helper
+    }
+  where
+    helper prog = do
+      cprog <- handleWarnings fcfg $ CMetal.compileProg versionString prog
+      let cpath = outpath `addExtension` "c"
+          hpath = outpath `addExtension` "h"
+          jsonpath = outpath `addExtension` "json"
+          shimpath = outpath `addExtension` "metal" `addExtension` "cpp"
+          ldflags =
+            [ "-lm",
+              "-framework",
+              "Metal",
+              "-framework",
+              "Foundation",
+              "-framework",
+              "QuartzCore",
+              "-lc++"
+            ]
+          buildBinary asWhat = do
+            liftIO $ T.writeFile cpath $ cPrependHeader $ asWhat cprog
+            liftIO $ T.writeFile shimpath shimCppMetal
+            when (System.Info.os /= "darwin") $
+              externalErrorS
+                "futhark metal: building executables requires macOS (use --library to only generate code)."
+            incpath <- materialiseMetalCpp
+            runMetalCC
+              cpath
+              shimpath
+              outpath
+              ["-O", "-std=c99"]
+              ["-std=c++17", "-O2", "-I" <> incpath]
+              ldflags
+      case mode of
+        ToLibrary -> do
+          let (header, impl, manifest) = CMetal.asLibrary cprog
+          liftIO $ T.writeFile hpath $ cPrependHeader header
+          liftIO $ T.writeFile cpath $ cPrependHeader impl
+          liftIO $ T.writeFile shimpath shimCppMetal
+          liftIO $ T.writeFile jsonpath manifest
+        ToExecutable -> buildBinary CMetal.asExecutable
+        ToServer -> buildBinary CMetal.asServer
 
 -- | The @futhark multicore@ action.
 compileMulticoreAction :: FutharkConfig -> CompilerMode -> FilePath -> Action MCMem

@@ -1,0 +1,69 @@
+# CI for the Metal backend. Runs on Apple Silicon macOS runners, whose
+# virtualised GPU (Apple Paravirtual device) supports Metal compute, so
+# this actually executes kernels — not just compiles them.
+name: metal
+
+on:
+  push:
+    branches: [metal-backend]
+  workflow_dispatch:
+
+jobs:
+  metal-test:
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: haskell-actions/setup@v2
+        id: setup-haskell
+        with:
+          ghc-version: "9.10.3"
+          cabal-version: "latest"
+
+      - name: Cache cabal store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ steps.setup-haskell.outputs.cabal-store }}
+            dist-newstyle
+          key: metal-${{ runner.os }}-${{ hashFiles('futhark.cabal', 'cabal.project') }}
+          restore-keys: |
+            metal-${{ runner.os }}-
+
+      - name: Build futhark
+        run: |
+          cabal update
+          cabal build exe:futhark
+          echo "FUTHARK=$(cabal list-bin exe:futhark)" >> "$GITHUB_ENV"
+
+      - name: GPU info
+        run: |
+          system_profiler SPDisplaysDataType || true
+
+      - name: Compile smoke test
+        run: |
+          "$FUTHARK" metal tests_metal/map.fut
+          # Dump the generated MSL for the build log.
+          ./tests_metal/map --dump-metal /dev/stdout | head -100 || true
+
+      - name: Run smoke test
+        run: |
+          echo '[1,2,3,4,5]' | ./tests_metal/map -e main
+
+      - name: futhark test (Metal subset)
+        run: |
+          "$FUTHARK" test --backend=metal tests_metal/
+
+      - name: futhark test (upstream SOAC subset)
+        run: |
+          "$FUTHARK" test --backend=metal \
+            tests/soacs/map0.fut \
+            tests/soacs/map1.fut \
+            tests/soacs/reduce0.fut \
+            tests/soacs/reduce1.fut \
+            tests/soacs/reduce4.fut \
+            tests/soacs/scan0.fut \
+            tests/soacs/scan1.fut \
+            tests/soacs/scan2.fut \
+            || true  # informational for now; tests_metal/ is the gate

@@ -1,19 +1,29 @@
 // Start of transpose.cl
 
+// MSL does not allow plain by-value scalar kernel arguments: every
+// kernel argument must be a resource, e.g. a device/constant pointer
+// or reference (MSL spec section 5.2).  The Metal prelude
+// (rts/metal/prelude.metal) therefore defines SCALAR_KARG(T) as
+// 'constant T&' (one [[buffer(n)]] slot, bound with setBytes by the
+// runtime); for the other dialects it is a plain by-value scalar.
+#ifndef SCALAR_KARG
+#define SCALAR_KARG(T) T
+#endif
+
 #define GEN_TRANSPOSE_KERNELS(NAME, ELEM_TYPE)                          \
 FUTHARK_KERNEL_SIZED(TR_BLOCK_DIM*2, TR_TILE_DIM/TR_ELEMS_PER_THREAD, 1)\
 void map_transpose_##NAME(SHARED_MEM_PARAM                              \
                           __global ELEM_TYPE *dst_mem,                  \
-                          int64_t dst_offset,                           \
+                          SCALAR_KARG(int64_t) dst_offset,                           \
                           __global ELEM_TYPE *src_mem,                  \
-                          int64_t src_offset,                           \
-                          int32_t num_arrays,                           \
-                          int32_t x_elems,                              \
-                          int32_t y_elems,                              \
-                          int32_t mulx,                                 \
-                          int32_t muly,                                 \
-                          int32_t repeat_1,                             \
-                          int32_t repeat_2) {                           \
+                          SCALAR_KARG(int64_t) src_offset,                           \
+                          SCALAR_KARG(int32_t) num_arrays,                           \
+                          SCALAR_KARG(int32_t) x_elems,                              \
+                          SCALAR_KARG(int32_t) y_elems,                              \
+                          SCALAR_KARG(int32_t) mulx,                                 \
+                          SCALAR_KARG(int32_t) muly,                                 \
+                          SCALAR_KARG(int32_t) repeat_1,                             \
+                          SCALAR_KARG(int32_t) repeat_2) {                           \
   (void)mulx; (void)muly;                                               \
   __local ELEM_TYPE* block = (__local ELEM_TYPE*)shared_mem;            \
   int tblock_id_0 = get_tblock_id(0);                                   \
@@ -64,16 +74,16 @@ void map_transpose_##NAME(SHARED_MEM_PARAM                              \
 FUTHARK_KERNEL_SIZED(TR_BLOCK_DIM, TR_BLOCK_DIM, 1)                     \
 void map_transpose_##NAME##_low_height(SHARED_MEM_PARAM                 \
                                                 __global ELEM_TYPE *dst_mem, \
-                                                int64_t dst_offset,     \
+                                                SCALAR_KARG(int64_t) dst_offset,     \
                                                 __global ELEM_TYPE *src_mem, \
-                                                int64_t src_offset,     \
-                                                int32_t num_arrays,     \
-                                                int32_t x_elems,        \
-                                                int32_t y_elems,        \
-                                                int32_t mulx,           \
-                                                int32_t muly,           \
-                                                int32_t repeat_1,       \
-                                                int32_t repeat_2) {     \
+                                                SCALAR_KARG(int64_t) src_offset,     \
+                                                SCALAR_KARG(int32_t) num_arrays,     \
+                                                SCALAR_KARG(int32_t) x_elems,        \
+                                                SCALAR_KARG(int32_t) y_elems,        \
+                                                SCALAR_KARG(int32_t) mulx,           \
+                                                SCALAR_KARG(int32_t) muly,           \
+                                                SCALAR_KARG(int32_t) repeat_1,       \
+                                                SCALAR_KARG(int32_t) repeat_2) {     \
   __local ELEM_TYPE* block = (__local ELEM_TYPE*)shared_mem;            \
   int tblock_id_0 = get_tblock_id(0);                                   \
   int global_id_0 = get_global_id(0);                                   \
@@ -119,16 +129,16 @@ void map_transpose_##NAME##_low_height(SHARED_MEM_PARAM                 \
 FUTHARK_KERNEL_SIZED(TR_BLOCK_DIM, TR_BLOCK_DIM, 1)                     \
 void map_transpose_##NAME##_low_width(SHARED_MEM_PARAM                  \
                                       __global ELEM_TYPE *dst_mem,      \
-                                      int64_t dst_offset,               \
+                                      SCALAR_KARG(int64_t) dst_offset,               \
                                       __global ELEM_TYPE *src_mem,      \
-                                      int64_t src_offset,               \
-                                      int32_t num_arrays,               \
-                                      int32_t x_elems,                  \
-                                      int32_t y_elems,                  \
-                                      int32_t mulx,                     \
-                                      int32_t muly,                     \
-                                      int32_t repeat_1,                 \
-                                      int32_t repeat_2) {               \
+                                      SCALAR_KARG(int64_t) src_offset,               \
+                                      SCALAR_KARG(int32_t) num_arrays,               \
+                                      SCALAR_KARG(int32_t) x_elems,                  \
+                                      SCALAR_KARG(int32_t) y_elems,                  \
+                                      SCALAR_KARG(int32_t) mulx,                     \
+                                      SCALAR_KARG(int32_t) muly,                     \
+                                      SCALAR_KARG(int32_t) repeat_1,                 \
+                                      SCALAR_KARG(int32_t) repeat_2) {               \
   __local ELEM_TYPE* block = (__local ELEM_TYPE*)shared_mem;            \
   int tblock_id_0 = get_tblock_id(0);                                   \
   int global_id_0 = get_global_id(0);                                   \
@@ -171,16 +181,16 @@ void map_transpose_##NAME##_low_width(SHARED_MEM_PARAM                  \
 FUTHARK_KERNEL_SIZED(TR_BLOCK_DIM*TR_BLOCK_DIM, 1, 1)                   \
 void map_transpose_##NAME##_small(SHARED_MEM_PARAM                       \
                                   __global ELEM_TYPE *dst_mem,          \
-                                  int64_t dst_offset,                   \
+                                  SCALAR_KARG(int64_t) dst_offset,                   \
                                   __global ELEM_TYPE *src_mem,          \
-                                  int64_t src_offset,                   \
-                                  int32_t num_arrays,                   \
-                                  int32_t x_elems,                      \
-                                  int32_t y_elems,                      \
-                                  int32_t mulx,                         \
-                                  int32_t muly,                         \
-                                  int32_t repeat_1,                     \
-                                  int32_t repeat_2) {                   \
+                                  SCALAR_KARG(int64_t) src_offset,                   \
+                                  SCALAR_KARG(int32_t) num_arrays,                   \
+                                  SCALAR_KARG(int32_t) x_elems,                      \
+                                  SCALAR_KARG(int32_t) y_elems,                      \
+                                  SCALAR_KARG(int32_t) mulx,                         \
+                                  SCALAR_KARG(int32_t) muly,                         \
+                                  SCALAR_KARG(int32_t) repeat_1,                     \
+                                  SCALAR_KARG(int32_t) repeat_2) {                   \
   (void)mulx; (void)muly;                                               \
   __local ELEM_TYPE* block = (__local ELEM_TYPE*)shared_mem;            \
   int tblock_id_0 = get_tblock_id(0);                                   \
@@ -212,16 +222,16 @@ void map_transpose_##NAME##_small(SHARED_MEM_PARAM                       \
 FUTHARK_KERNEL_SIZED(TR_BLOCK_DIM*2, TR_TILE_DIM/TR_ELEMS_PER_THREAD, 1)\
 void map_transpose_##NAME##_large(SHARED_MEM_PARAM                      \
                                   __global ELEM_TYPE *dst_mem,          \
-                                  int64_t dst_offset,                   \
+                                  SCALAR_KARG(int64_t) dst_offset,                   \
                                   __global ELEM_TYPE *src_mem,          \
-                                  int64_t src_offset,                   \
-                                  int64_t num_arrays,                   \
-                                  int64_t x_elems,                      \
-                                  int64_t y_elems,                      \
-                                  int64_t mulx,                         \
-                                  int64_t muly,                         \
-                                  int32_t repeat_1,                     \
-                                  int32_t repeat_2) {                   \
+                                  SCALAR_KARG(int64_t) src_offset,                   \
+                                  SCALAR_KARG(int64_t) num_arrays,                   \
+                                  SCALAR_KARG(int64_t) x_elems,                      \
+                                  SCALAR_KARG(int64_t) y_elems,                      \
+                                  SCALAR_KARG(int64_t) mulx,                         \
+                                  SCALAR_KARG(int64_t) muly,                         \
+                                  SCALAR_KARG(int32_t) repeat_1,                     \
+                                  SCALAR_KARG(int32_t) repeat_2) {                   \
   (void)mulx; (void)muly;                                               \
   __local ELEM_TYPE* block = (__local ELEM_TYPE*)shared_mem;             \
   int tblock_id_0 = get_tblock_id(0);                                   \

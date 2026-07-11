@@ -23,7 +23,11 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#ifndef __OPENCL_VERSION__
+// Under OpenCL and Metal, __constant is (or macro-expands to, see
+// rts/metal/prelude.metal) the constant address space, which is
+// required for the program-scope tables below.  Elsewhere it means
+// nothing.
+#if !defined(__OPENCL_VERSION__) && !defined(FUTHARK_METAL)
 #define __constant
 #endif
 

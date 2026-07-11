@@ -1,23 +1,35 @@
 // Start of copy.cl
 
+// MSL does not allow plain by-value scalar kernel arguments: every
+// kernel argument must be a resource, e.g. a device/constant pointer
+// or reference (MSL spec section 5.2).  The Metal prelude
+// (rts/metal/prelude.metal) therefore defines SCALAR_KARG(T) as
+// 'constant T&' (one [[buffer(n)]] slot, bound with setBytes by the
+// runtime); for the other dialects it is a plain by-value scalar.
+#ifndef SCALAR_KARG
+#define SCALAR_KARG(T) T
+#endif
+
 #define GEN_COPY_KERNEL(NAME, ELEM_TYPE) \
 FUTHARK_KERNEL void lmad_copy_##NAME(SHARED_MEM_PARAM                   \
                                __global ELEM_TYPE *dst_mem,             \
-                               int64_t dst_offset,                      \
+                               SCALAR_KARG(int64_t) dst_offset_arg,     \
                                __global ELEM_TYPE *src_mem,             \
-                               int64_t src_offset,                      \
-                               int64_t n,                               \
-                               int r,                                   \
-                               int64_t shape0, int64_t dst_stride0, int64_t src_stride0, \
-                               int64_t shape1, int64_t dst_stride1, int64_t src_stride1, \
-                               int64_t shape2, int64_t dst_stride2, int64_t src_stride2, \
-                               int64_t shape3, int64_t dst_stride3, int64_t src_stride3, \
-                               int64_t shape4, int64_t dst_stride4, int64_t src_stride4, \
-                               int64_t shape5, int64_t dst_stride5, int64_t src_stride5, \
-                               int64_t shape6, int64_t dst_stride6, int64_t src_stride6, \
-                               int64_t shape7, int64_t dst_stride7, int64_t src_stride7) { \
+                               SCALAR_KARG(int64_t) src_offset_arg,     \
+                               SCALAR_KARG(int64_t) n,                  \
+                               SCALAR_KARG(int) r,                      \
+                               SCALAR_KARG(int64_t) shape0, SCALAR_KARG(int64_t) dst_stride0, SCALAR_KARG(int64_t) src_stride0, \
+                               SCALAR_KARG(int64_t) shape1, SCALAR_KARG(int64_t) dst_stride1, SCALAR_KARG(int64_t) src_stride1, \
+                               SCALAR_KARG(int64_t) shape2, SCALAR_KARG(int64_t) dst_stride2, SCALAR_KARG(int64_t) src_stride2, \
+                               SCALAR_KARG(int64_t) shape3, SCALAR_KARG(int64_t) dst_stride3, SCALAR_KARG(int64_t) src_stride3, \
+                               SCALAR_KARG(int64_t) shape4, SCALAR_KARG(int64_t) dst_stride4, SCALAR_KARG(int64_t) src_stride4, \
+                               SCALAR_KARG(int64_t) shape5, SCALAR_KARG(int64_t) dst_stride5, SCALAR_KARG(int64_t) src_stride5, \
+                               SCALAR_KARG(int64_t) shape6, SCALAR_KARG(int64_t) dst_stride6, SCALAR_KARG(int64_t) src_stride6, \
+                               SCALAR_KARG(int64_t) shape7, SCALAR_KARG(int64_t) dst_stride7, SCALAR_KARG(int64_t) src_stride7) { \
   int64_t gtid = get_global_id(0);                                      \
   int64_t remainder = gtid;                                             \
+  int64_t dst_offset = dst_offset_arg;                                  \
+  int64_t src_offset = src_offset_arg;                                  \
                                                                         \
   if (gtid >= n) {                                                      \
     return;                                                             \

@@ -1,11 +1,12 @@
 {-# LANGUAGE QuasiQuotes #-}
 
 -- | This module defines a translation from imperative code with
--- kernels to imperative code with OpenCL or CUDA calls.
+-- kernels to imperative code with OpenCL, CUDA, HIP, or Metal calls.
 module Futhark.CodeGen.ImpGen.GPU.ToOpenCL
   ( kernelsToOpenCL,
     kernelsToCUDA,
     kernelsToHIP,
+    kernelsToMetal,
   )
 where
 
@@ -28,6 +29,7 @@ import Futhark.CodeGen.ImpCode.OpenCL hiding (Program)
 import Futhark.CodeGen.ImpCode.OpenCL qualified as ImpOpenCL
 import Futhark.CodeGen.RTS.C (atomicsH, halfH)
 import Futhark.CodeGen.RTS.CUDA (preludeCU)
+import Futhark.CodeGen.RTS.Metal (preludeMetal)
 import Futhark.CodeGen.RTS.OpenCL (copyCL, preludeCL, transposeCL)
 import Futhark.Error (compilerLimitationS)
 import Futhark.MonadFreshNames
@@ -49,6 +51,10 @@ kernelsToCUDA = translateGPU TargetCUDA
 -- | Generate OpenCL host and device code.
 kernelsToOpenCL :: ImpGPU.Program -> ImpOpenCL.Program
 kernelsToOpenCL = translateGPU TargetOpenCL
+
+-- | Generate Metal host and device code.
+kernelsToMetal :: ImpGPU.Program -> ImpOpenCL.Program
+kernelsToMetal = translateGPU TargetMetal
 
 -- | Translate a kernels-program to an OpenCL-program.
 translateGPU ::
@@ -100,6 +106,7 @@ translateGPU target prog =
     genPrelude TargetOpenCL = genOpenClPrelude
     genPrelude TargetCUDA = const genCUDAPrelude
     genPrelude TargetHIP = const genHIPPrelude
+    genPrelude TargetMetal = genMetalPrelude
 
 -- | Due to simplifications after kernel extraction, some threshold
 -- parameters may contain KernelPaths that reference threshold
@@ -236,22 +243,23 @@ onHostOp _ (ImpGPU.GetSizeMax v size_class) =
   pure $ ImpOpenCL.GetSizeMax v size_class
 
 genGPUCode ::
+  KernelTarget ->
   Env ->
   OpsMode ->
   KernelCode ->
   [FailureMsg] ->
   GC.CompilerM KernelOp KernelState a ->
   (a, GC.CompilerState KernelState)
-genGPUCode env mode body failures =
+genGPUCode target env mode body failures =
   GC.runCompilerM
-    (inKernelOperations env mode body)
+    (inKernelOperations target env mode body)
     blankNameSource
     (newKernelState failures)
 
 -- Compilation of a device function that is not not invoked from the
 -- host, but is invoked by (perhaps multiple) kernels.
-generateDeviceFun :: Name -> ImpGPU.Function ImpGPU.KernelOp -> OnKernelM ()
-generateDeviceFun fname device_func = do
+generateDeviceFun :: KernelTarget -> Name -> ImpGPU.Function ImpGPU.KernelOp -> OnKernelM ()
+generateDeviceFun target fname device_func = do
   when (any memParam $ functionInput device_func) bad
 
   env <- ask
@@ -265,12 +273,12 @@ generateDeviceFun fname device_func = do
                     [C.cparam|__global typename int64_t *global_failure_args|]
                   ]
                 (f, cstate) =
-                  genGPUCode env FunMode (declsFirst $ functionBody device_func) failures $
+                  genGPUCode target env FunMode (declsFirst $ functionBody device_func) failures $
                     GC.compileFun mempty params (fname, device_func)
              in (f, GC.compUserState cstate)
           else
             let (f, cstate) =
-                  genGPUCode env FunMode (declsFirst $ functionBody device_func) failures $
+                  genGPUCode target env FunMode (declsFirst $ functionBody device_func) failures $
                     GC.compileVoidFun mempty (fname, device_func)
              in (f, GC.compUserState cstate)
 
@@ -283,7 +291,7 @@ generateDeviceFun fname device_func = do
 
   -- Important to do this after the 'modify' call, so we propagate the
   -- right clFailures.
-  void $ ensureDeviceFuns $ functionBody device_func
+  void $ ensureDeviceFuns target $ functionBody device_func
   where
     memParam MemParam {} = True
     memParam ScalarParam {} = False
@@ -292,10 +300,10 @@ generateDeviceFun fname device_func = do
 
 -- Ensure that this device function is available, but don't regenerate
 -- it if it already exists.
-ensureDeviceFun :: Name -> ImpGPU.Function ImpGPU.KernelOp -> OnKernelM ()
-ensureDeviceFun fname host_func = do
+ensureDeviceFun :: KernelTarget -> Name -> ImpGPU.Function ImpGPU.KernelOp -> OnKernelM ()
+ensureDeviceFun target fname host_func = do
   exists <- gets $ M.member fname . clDevFuns
-  unless exists $ generateDeviceFun fname host_func
+  unless exists $ generateDeviceFun target fname host_func
 
 calledInHostOp :: HostOp -> S.Set Name
 calledInHostOp (CallKernel k) = calledFuncs calledInKernelOp $ kernelBody k
@@ -304,8 +312,8 @@ calledInHostOp _ = mempty
 calledInKernelOp :: KernelOp -> S.Set Name
 calledInKernelOp = const mempty
 
-ensureDeviceFuns :: ImpGPU.KernelCode -> OnKernelM [Name]
-ensureDeviceFuns code = do
+ensureDeviceFuns :: KernelTarget -> ImpGPU.KernelCode -> OnKernelM [Name]
+ensureDeviceFuns target code = do
   let called = calledFuncs calledInKernelOp code
   fmap catMaybes . forM (S.toList called) $ \fname -> do
     def <- asks $ lookupFunction fname
@@ -316,7 +324,7 @@ ensureDeviceFuns code = do
         -- limitations on device-side functions (no arrays, no parallelism)
         -- comes from.
         let device_func = fmap toDevice host_func
-        ensureDeviceFun fname device_func
+        ensureDeviceFun target fname device_func
         pure $ Just fname
       Nothing -> pure Nothing
   where
@@ -333,7 +341,7 @@ isConst _ = Nothing
 
 onKernel :: KernelTarget -> Kernel -> OnKernelM OpenCL
 onKernel target kernel = do
-  called <- ensureDeviceFuns $ kernelBody kernel
+  called <- ensureDeviceFuns target $ kernelBody kernel
 
   -- Crucial that this is done after 'ensureDeviceFuns', as the device
   -- functions may themselves define failure points.
@@ -341,7 +349,7 @@ onKernel target kernel = do
   env <- ask
 
   let (kernel_body, cstate) =
-        genGPUCode env KernelMode (kernelBody kernel) failures . GC.collect $ do
+        genGPUCode target env KernelMode (kernelBody kernel) failures . GC.collect $ do
           body <- GC.collect $ GC.compileCode $ declsFirst $ kernelBody kernel
           -- No need to free, as we cannot allocate memory in kernels.
           mapM_ GC.item =<< GC.declAllocatedMem
@@ -356,7 +364,7 @@ onKernel target kernel = do
       shared_memory_bytes = sum $ map (padTo8 . snd) $ kernelSharedMemory kstate
 
   let (use_params, unpack_params) =
-        unzip $ mapMaybe useAsParam $ kernelUses kernel
+        unzip $ mapMaybe (useAsParam target) $ kernelUses kernel
 
   -- The local_failure variable is an int despite only really storing
   -- a single bit of information, as some OpenCL implementations
@@ -401,10 +409,21 @@ onKernel target kernel = do
                 )
 
       failure_params =
-        [ [C.cparam|__global int *global_failure|],
-          [C.cparam|int failure_is_an_option|],
-          [C.cparam|__global typename int64_t *global_failure_args|]
+        [ ([C.cparam|__global int *global_failure|], []),
+          case target of
+            -- MSL kernel scalar arguments must live in an address
+            -- space, so they are passed as constant pointers and
+            -- dereferenced on entry.
+            TargetMetal ->
+              ( [C.cparam|__constant int *failure_is_an_option_p|],
+                [[C.citem|int failure_is_an_option = *failure_is_an_option_p;|]]
+              )
+            _ -> ([C.cparam|int failure_is_an_option|], []),
+          ([C.cparam|__global typename int64_t *global_failure_args|], [])
         ]
+
+      (failure_params', failure_unpack) =
+        second mconcat $ unzip $ take (numFailureParams safety) failure_params
 
       (shared_memory_param, prepare_shared_memory) =
         case target of
@@ -414,11 +433,32 @@ onKernel target kernel = do
             )
           TargetCUDA -> (mempty, mempty)
           TargetHIP -> (mempty, mempty)
+          -- FUTHARK_SHARED_MEM_PARAM_NAME is a prelude macro expanding
+          -- to 'shared_mem_aligned [[threadgroup(0)]]'.
+          TargetMetal ->
+            ( [[C.cparam|__local typename uint64_t* FUTHARK_SHARED_MEM_PARAM_NAME|]],
+              [C.citems|__local unsigned char* shared_mem = (__local unsigned char*)shared_mem_aligned;|]
+            )
+
+      -- MSL provides thread indices only through attributed kernel
+      -- parameters; the FUTHARK_*_PARAM macros expand to
+      -- 'name [[attribute]]'. They consume no [[buffer(n)]] indices,
+      -- preserving the positional launch ABI of the other parameters.
+      builtin_index_params =
+        case target of
+          TargetMetal ->
+            [ [C.cparam|uint3 FUTHARK_TID_PARAM|],
+              [C.cparam|uint3 FUTHARK_TBLOCK_PARAM|],
+              [C.cparam|uint3 FUTHARK_TBSIZE_PARAM|],
+              [C.cparam|uint3 FUTHARK_NTBLOCKS_PARAM|]
+            ]
+          _ -> []
 
       params =
         shared_memory_param
-          ++ take (numFailureParams safety) failure_params
+          ++ failure_params'
           ++ use_params
+          ++ builtin_index_params
 
       (attribute_consts, attribute) =
         case mapM isConst $ kernelBlockSize kernel of
@@ -445,18 +485,26 @@ onKernel target kernel = do
               xv = nameFromText $ zEncodeText $ nameToText name <> "_dim1"
           _ -> (mempty, "FUTHARK_KERNEL\n")
 
+      -- MSL has no goto, so no label is emitted for Metal (nothing
+      -- can jump to it; see whatNext).
+      end_items =
+        case target of
+          TargetMetal -> [C.citems|return;|]
+          _ -> [C.citems|$id:(errorLabel kstate): return;|]
+
       kernel_fun =
         attribute
           <> funcText
             [C.cfun|void $id:name ($params:params) {
                     $items:(mconcat unpack_params)
+                    $items:failure_unpack
                     $items:const_defs
                     $items:prepare_shared_memory
                     $items:(mconcat shared_memory_init)
                     $items:error_init
                     $items:kernel_body
 
-                    $id:(errorLabel kstate): return;
+                    $items:end_items
 
                     $items:const_undefs
                 }|]
@@ -487,8 +535,22 @@ onKernel target kernel = do
              |]
           )
 
-useAsParam :: KernelUse -> Maybe (C.Param, [C.BlockItem])
-useAsParam (ScalarUse name pt) = do
+useAsParam :: KernelTarget -> KernelUse -> Maybe (C.Param, [C.BlockItem])
+useAsParam TargetMetal (ScalarUse name pt) = do
+  -- MSL kernel scalar arguments must live in an address space; pass
+  -- them as constant pointers (bound with setBytes on the host side)
+  -- and dereference on entry.
+  let name_p = zEncodeText (prettyText name) <> "_p"
+      ctp = case pt of
+        Bool -> [C.cty|unsigned char|]
+        Unit -> [C.cty|unsigned char|]
+        _ -> primStorageType pt
+      name_p_e = [C.cexp|*$id:name_p|]
+  Just
+    ( [C.cparam|__constant $ty:ctp *$id:name_p|],
+      [[C.citem|$ty:(primTypeToCType pt) $id:name = $exp:(fromStorage pt name_p_e);|]]
+    )
+useAsParam _ (ScalarUse name pt) = do
   let name_bits = zEncodeText (prettyText name) <> "_bits"
       ctp = case pt of
         -- OpenCL does not permit bool as a kernel parameter type.
@@ -503,9 +565,9 @@ useAsParam (ScalarUse name pt) = do
             ( [C.cparam|$ty:ctp $id:name_bits|],
               [[C.citem|$ty:(primTypeToCType pt) $id:name = $exp:(fromStorage pt name_bits_e);|]]
             )
-useAsParam (MemoryUse name) =
+useAsParam _ (MemoryUse name) =
   Just ([C.cparam|__global $ty:defaultMemBlockType $id:name|], [])
-useAsParam ConstUse {} =
+useAsParam _ ConstUse {} =
   Nothing
 
 -- Constants are #defined as macros.  Since a constant name in one
@@ -557,6 +619,16 @@ genHIPPrelude =
     <> preludeCU
     <> commonPrelude
 
+genMetalPrelude :: S.Set PrimType -> T.Text
+genMetalPrelude ts
+  | FloatType Float64 `S.member` ts =
+      compilerLimitationS
+        "The Metal backend does not support f64 (Apple GPUs have no double precision)."
+  | otherwise =
+      "#define FUTHARK_METAL\n"
+        <> preludeMetal
+        <> commonPrelude
+
 kernelArgs :: Kernel -> [KernelArg]
 kernelArgs = mapMaybe useToArg . kernelUses
   where
@@ -589,11 +661,12 @@ hasCommunication = any communicates
 data OpsMode = KernelMode | FunMode deriving (Eq)
 
 inKernelOperations ::
+  KernelTarget ->
   Env ->
   OpsMode ->
   ImpGPU.KernelCode ->
   GC.Operations KernelOp KernelState
-inKernelOperations env mode body =
+inKernelOperations target env mode body =
   GC.Operations
     { GC.opsCompiler = kernelOps,
       GC.opsMemoryType = kernelMemoryType,
@@ -649,7 +722,25 @@ inKernelOperations env mode body =
       GC.stm [C.cstm|barrier($exp:(fence f));|]
       GC.modifyUserState $ \s -> s {kernelHasBarriers = True}
       incErrorLabel
-    kernelOps (Atomic space aop) = atomicOps space aop
+    kernelOps (Atomic space aop)
+      | target == TargetMetal && atomicIs64 aop =
+          compilerLimitationS
+            "The Metal backend does not support 64-bit atomic operations (not provided by MSL)."
+      | otherwise = atomicOps space aop
+
+    atomicIs64 :: AtomicOp -> Bool
+    atomicIs64 (AtomicAdd Int64 _ _ _ _) = True
+    atomicIs64 (AtomicFAdd Float64 _ _ _ _) = True
+    atomicIs64 (AtomicSMax Int64 _ _ _ _) = True
+    atomicIs64 (AtomicSMin Int64 _ _ _ _) = True
+    atomicIs64 (AtomicUMax Int64 _ _ _ _) = True
+    atomicIs64 (AtomicUMin Int64 _ _ _ _) = True
+    atomicIs64 (AtomicAnd Int64 _ _ _ _) = True
+    atomicIs64 (AtomicOr Int64 _ _ _ _) = True
+    atomicIs64 (AtomicXor Int64 _ _ _ _) = True
+    atomicIs64 (AtomicCmpXchg (IntType Int64) _ _ _ _ _) = True
+    atomicIs64 (AtomicXchg (IntType Int64) _ _ _ _) = True
+    atomicIs64 _ = False
 
     atomicCast s t = do
       let volatile = [C.ctyquals|volatile|]
@@ -816,7 +907,11 @@ inKernelOperations env mode body =
       pendingError True
       pure $
         if has_communication
-          then [C.citems|local_failure = 1; goto $id:label;|]
+          then case target of
+            TargetMetal ->
+              compilerLimitationS
+                "The Metal backend cannot compile assertions or bounds checks inside kernels that use barriers, because MSL has no goto. Consider disabling safety checks (e.g. futhark metal --unsafe)."
+            _ -> [C.citems|local_failure = 1; goto $id:label;|]
           else
             if mode == FunMode
               then [C.citems|return 1;|]

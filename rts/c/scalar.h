@@ -644,14 +644,14 @@ SCALAR_FUN_ATTR int8_t   abs8(int8_t x)  { return (int8_t)abs(x); }
 SCALAR_FUN_ATTR int16_t abs16(int16_t x) { return (int16_t)abs(x); }
 SCALAR_FUN_ATTR int32_t abs32(int32_t x) { return abs(x); }
 SCALAR_FUN_ATTR int64_t abs64(int64_t x) {
-#if defined(__OPENCL_VERSION__) || defined(ISPC)
+#if defined(__OPENCL_VERSION__) || defined(ISPC) || defined(FUTHARK_METAL)
   return abs(x);
 #else
   return llabs(x);
 #endif
 }
 
-#if defined(__OPENCL_VERSION__)
+#if defined(__OPENCL_VERSION__) || defined(FUTHARK_METAL)
 
 SCALAR_FUN_ATTR int32_t  futrts_popc8(int8_t x)  { return popcount(x); }
 SCALAR_FUN_ATTR int32_t futrts_popc16(int16_t x) { return popcount(x); }
@@ -701,6 +701,15 @@ SCALAR_FUN_ATTR uint8_t  futrts_smul_hi8 ( int8_t a,  int8_t b) { return mul_hi(
 SCALAR_FUN_ATTR uint16_t futrts_smul_hi16(int16_t a, int16_t b) { return mul_hi(a, b); }
 SCALAR_FUN_ATTR uint32_t futrts_smul_hi32(int32_t a, int32_t b) { return mul_hi(a, b); }
 SCALAR_FUN_ATTR uint64_t futrts_smul_hi64(int64_t a, int64_t b) { return mul_hi(a, b); }
+#elif defined(FUTHARK_METAL)
+SCALAR_FUN_ATTR uint8_t  futrts_umul_hi8 ( uint8_t a,  uint8_t b) { return mulhi(a, b); }
+SCALAR_FUN_ATTR uint16_t futrts_umul_hi16(uint16_t a, uint16_t b) { return mulhi(a, b); }
+SCALAR_FUN_ATTR uint32_t futrts_umul_hi32(uint32_t a, uint32_t b) { return mulhi(a, b); }
+SCALAR_FUN_ATTR uint64_t futrts_umul_hi64(uint64_t a, uint64_t b) { return mulhi(a, b); }
+SCALAR_FUN_ATTR uint8_t  futrts_smul_hi8 ( int8_t a,  int8_t b) { return mulhi(a, b); }
+SCALAR_FUN_ATTR uint16_t futrts_smul_hi16(int16_t a, int16_t b) { return mulhi(a, b); }
+SCALAR_FUN_ATTR uint32_t futrts_smul_hi32(int32_t a, int32_t b) { return mulhi(a, b); }
+SCALAR_FUN_ATTR uint64_t futrts_smul_hi64(int64_t a, int64_t b) { return mulhi(a, b); }
 #elif defined(__CUDA_ARCH__)
 SCALAR_FUN_ATTR  uint8_t futrts_umul_hi8(uint8_t a, uint8_t b) { return ((uint16_t)a) * ((uint16_t)b) >> 8; }
 SCALAR_FUN_ATTR uint16_t futrts_umul_hi16(uint16_t a, uint16_t b) { return ((uint32_t)a) * ((uint32_t)b) >> 16; }
@@ -796,7 +805,7 @@ SCALAR_FUN_ATTR uint32_t futrts_smad_hi32(int32_t a, int32_t b, int32_t c) { ret
 SCALAR_FUN_ATTR uint64_t futrts_smad_hi64(int64_t a, int64_t b, int64_t c) { return futrts_smul_hi64(a, b) + c; }
 #endif
 
-#if defined(__OPENCL_VERSION__)
+#if defined(__OPENCL_VERSION__) || defined(FUTHARK_METAL)
 SCALAR_FUN_ATTR int32_t  futrts_clzz8(int8_t x)  { return clz(x); }
 SCALAR_FUN_ATTR int32_t futrts_clzz16(int16_t x) { return clz(x); }
 SCALAR_FUN_ATTR int32_t futrts_clzz32(int32_t x) { return clz(x); }
@@ -853,6 +862,13 @@ SCALAR_FUN_ATTR int32_t futrts_ctzz64(int64_t x) {
   return i;
 }
 
+#elif defined(FUTHARK_METAL)
+
+SCALAR_FUN_ATTR int32_t  futrts_ctzz8(int8_t x)  { return ctz(x); }
+SCALAR_FUN_ATTR int32_t futrts_ctzz16(int16_t x) { return ctz(x); }
+SCALAR_FUN_ATTR int32_t futrts_ctzz32(int32_t x) { return ctz(x); }
+SCALAR_FUN_ATTR int32_t futrts_ctzz64(int64_t x) { return ctz(x); }
+
 #elif defined(__CUDA_ARCH__)
 
 SCALAR_FUN_ATTR int32_t futrts_ctzz8(int8_t x) {
@@ -906,7 +922,7 @@ SCALAR_FUN_ATTR float uitofp_i16_f32(uint16_t x) { return (float) x; }
 SCALAR_FUN_ATTR float uitofp_i32_f32(uint32_t x) { return (float) x; }
 SCALAR_FUN_ATTR float uitofp_i64_f32(uint64_t x) { return (float) x; }
 
-#ifdef __OPENCL_VERSION__
+#if defined(__OPENCL_VERSION__) || defined(FUTHARK_METAL)
 SCALAR_FUN_ATTR float fabs32(float x)          { return fabs(x); }
 SCALAR_FUN_ATTR float fmax32(float x, float y) { return fmax(x, y); }
 SCALAR_FUN_ATTR float fmin32(float x, float y) { return fmin(x, y); }
@@ -1058,6 +1074,124 @@ SCALAR_FUN_ATTR float futrts_lerp32(float v0, float v1, float t) { return mix(v0
 SCALAR_FUN_ATTR float futrts_ldexp32(float x, int32_t y) { return ldexp(x, y); }
 SCALAR_FUN_ATTR float futrts_copysign32(float x, float y) { return copysign(x, y); }
 SCALAR_FUN_ATTR float futrts_mad32(float a, float b, float c) { return mad(a, b, c); }
+SCALAR_FUN_ATTR float futrts_fma32(float a, float b, float c) { return fma(a, b, c); }
+
+#elif defined(FUTHARK_METAL)
+
+SCALAR_FUN_ATTR float futrts_log32(float x) { return log(x); }
+SCALAR_FUN_ATTR float futrts_log2_32(float x) { return log2(x); }
+SCALAR_FUN_ATTR float futrts_log10_32(float x) { return log10(x); }
+// MSL has no log1p; compensated formulation (as in the ISPC branch).
+SCALAR_FUN_ATTR float futrts_log1p_32(float x) {
+  if (x == -1.0f || (futrts_isinf32(x) && x > 0.0f)) return x / 0.0f;
+  float y = 1.0f + x;
+  float z = y - 1.0f;
+  return log(y) - (z-x)/y;
+}
+SCALAR_FUN_ATTR float futrts_sqrt32(float x) { return sqrt(x); }
+SCALAR_FUN_ATTR float futrts_rsqrt32(float x) { return rsqrt(x); }
+// MSL has no cbrt.
+SCALAR_FUN_ATTR float futrts_cbrt32(float x) {
+  return copysign(pow(fabs(x), 1.0f/3.0f), x);
+}
+SCALAR_FUN_ATTR float futrts_exp32(float x) { return exp(x); }
+SCALAR_FUN_ATTR float futrts_cos32(float x) { return cos(x); }
+SCALAR_FUN_ATTR float futrts_cospi32(float x) { return cospi(x); }
+SCALAR_FUN_ATTR float futrts_sin32(float x) { return sin(x); }
+SCALAR_FUN_ATTR float futrts_sinpi32(float x) { return sinpi(x); }
+SCALAR_FUN_ATTR float futrts_tan32(float x) { return tan(x); }
+SCALAR_FUN_ATTR float futrts_tanpi32(float x) { return tanpi(x); }
+SCALAR_FUN_ATTR float futrts_acos32(float x) { return acos(x); }
+SCALAR_FUN_ATTR float futrts_acospi32(float x) { return acos(x) / M_PI_F; }
+SCALAR_FUN_ATTR float futrts_asin32(float x) { return asin(x); }
+SCALAR_FUN_ATTR float futrts_asinpi32(float x) { return asin(x) / M_PI_F; }
+SCALAR_FUN_ATTR float futrts_atan32(float x) { return atan(x); }
+SCALAR_FUN_ATTR float futrts_atanpi32(float x) { return atan(x) / M_PI_F; }
+SCALAR_FUN_ATTR float futrts_cosh32(float x) { return cosh(x); }
+SCALAR_FUN_ATTR float futrts_sinh32(float x) { return sinh(x); }
+SCALAR_FUN_ATTR float futrts_tanh32(float x) { return tanh(x); }
+SCALAR_FUN_ATTR float futrts_acosh32(float x) { return acosh(x); }
+SCALAR_FUN_ATTR float futrts_asinh32(float x) { return asinh(x); }
+SCALAR_FUN_ATTR float futrts_atanh32(float x) { return atanh(x); }
+SCALAR_FUN_ATTR float futrts_atan2_32(float x, float y) { return atan2(x, y); }
+SCALAR_FUN_ATTR float futrts_atan2pi_32(float x, float y) { return atan2(x, y) / M_PI_F; }
+// MSL has no hypot; overflow-safe scaling formulation.
+SCALAR_FUN_ATTR float futrts_hypot32(float x, float y) {
+  if (futrts_isinf32(x) || futrts_isinf32(y)) { return INFINITY; }
+  if (futrts_isnan32(x) || futrts_isnan32(y)) { return x + y; }
+  float a = fmax(fabs(x), fabs(y));
+  float b = fmin(fabs(x), fabs(y));
+  if (a == 0.0f) { return 0.0f; }
+  float r = b / a;
+  return a * sqrt(1.0f + r * r);
+}
+// MSL has no tgamma/lgamma/erf/erfc, so we provide single-precision
+// approximations: a Lanczos approximation for lgamma (cf. Numerical
+// Recipes' gammln) with the reflection formula for nonpositive
+// arguments, and a rational Chebyshev approximation for erfc (cf.
+// Numerical Recipes' erfcc; |error| <= 1.2e-7, which is close to f32
+// epsilon).  Accuracy is a bit below a correctly-rounded libm, but
+// there is no double on Apple GPUs to do better with.
+SCALAR_FUN_ATTR float futrts_lgamma32_pos(float x) { // Requires x > 0.
+  float cof[6] = { 76.18009172947146f, -86.50532032941677f,
+                   24.01409824083091f, -1.231739572450155f,
+                   0.1208650973866179e-2f, -0.5395239384953e-5f };
+  float y = x;
+  float tmp = x + 5.5f;
+  tmp -= (x + 0.5f) * log(tmp);
+  float ser = 1.000000000190015f;
+  for (int j = 0; j < 6; j++) { ser += cof[j] / ++y; }
+  return -tmp + log(2.5066282746310005f * ser / x);
+}
+SCALAR_FUN_ATTR float futrts_lgamma32(float x) {
+  if (futrts_isnan32(x)) { return x; }
+  if (futrts_isinf32(x)) { return INFINITY; }
+  if (x > 0.0f) { return futrts_lgamma32_pos(x); }
+  if (x == floor(x)) { return INFINITY; } // Poles at 0, -1, -2, ...
+  // lgamma(x) = log(pi / |sin(pi*x)|) - lgamma(1-x)
+  return log(M_PI_F / fabs(sinpi(x))) - futrts_lgamma32_pos(1.0f - x);
+}
+SCALAR_FUN_ATTR float futrts_gamma32(float x) {
+  if (futrts_isnan32(x)) { return x; }
+  if (x == 0.0f) { return copysign(INFINITY, x); }
+  if (x > 0.0f) {
+    if (futrts_isinf32(x)) { return x; }
+    return exp(futrts_lgamma32_pos(x));
+  }
+  if (x == floor(x)) { return NAN; } // Negative integers and -inf.
+  // gamma(x) = pi / (sin(pi*x) * gamma(1-x))
+  return M_PI_F / (sinpi(x) * exp(futrts_lgamma32_pos(1.0f - x)));
+}
+SCALAR_FUN_ATTR float futrts_erfc32(float x) {
+  float z = fabs(x);
+  float t = 1.0f / (1.0f + 0.5f * z);
+  float ans =
+    t * exp(-z * z - 1.26551223f +
+            t * (1.00002368f +
+                 t * (0.37409196f +
+                      t * (0.09678418f +
+                           t * (-0.18628806f +
+                                t * (0.27886807f +
+                                     t * (-1.13520398f +
+                                          t * (1.48851587f +
+                                               t * (-0.82215223f +
+                                                    t * 0.17087277f)))))))));
+  return x >= 0.0f ? ans : 2.0f - ans;
+}
+SCALAR_FUN_ATTR float futrts_erf32(float x) { return 1.0f - futrts_erfc32(x); }
+SCALAR_FUN_ATTR float fmod32(float x, float y) { return fmod(x, y); }
+SCALAR_FUN_ATTR float futrts_round32(float x) { return rint(x); }
+SCALAR_FUN_ATTR float futrts_floor32(float x) { return floor(x); }
+SCALAR_FUN_ATTR float futrts_ceil32(float x) { return ceil(x); }
+// nextafter is native MSL since Metal 3.1 (the backend baseline is
+// Metal 3.2; see prelude.metal).
+SCALAR_FUN_ATTR float futrts_nextafter32(float x, float y) { return nextafter(x, y); }
+SCALAR_FUN_ATTR float futrts_lerp32(float v0, float v1, float t) { return mix(v0, v1, t); }
+SCALAR_FUN_ATTR float futrts_ldexp32(float x, int32_t y) { return ldexp(x, y); }
+SCALAR_FUN_ATTR float futrts_copysign32(float x, float y) { return copysign(x, y); }
+// MSL has no mad(); OpenCL's mad() has implementation-defined
+// precision, so a plain expression is a valid implementation.
+SCALAR_FUN_ATTR float futrts_mad32(float a, float b, float c) { return a * b + c; }
 SCALAR_FUN_ATTR float futrts_fma32(float a, float b, float c) { return fma(a, b, c); }
 
 #elif defined(ISPC)
@@ -1304,6 +1438,11 @@ SCALAR_FUN_ATTR int32_t fptobits_f32_i32(float x) { return intbits(x); }
 SCALAR_FUN_ATTR float bitstofp_i32_f32(int32_t x) { return floatbits(x); }
 SCALAR_FUN_ATTR uniform int32_t fptobits_f32_i32(uniform float x) { return intbits(x); }
 SCALAR_FUN_ATTR uniform float bitstofp_i32_f32(uniform int32_t x) { return floatbits(x); }
+
+#elif defined(FUTHARK_METAL)
+
+SCALAR_FUN_ATTR int32_t fptobits_f32_i32(float x) { return as_type<int32_t>(x); }
+SCALAR_FUN_ATTR float bitstofp_i32_f32(int32_t x) { return as_type<float>(x); }
 
 #else
 
