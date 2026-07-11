@@ -28,10 +28,13 @@
 -- port is f32 *for all three benchmarked backends* — the comparison
 -- stays apples-to-apples, but absolute numerics differ from glissando.
 -- CI-sized copy of heavy-metal's bench/kernel.fut (keep in sync).
--- ==
--- entry: reml_grad_eval
--- compiled random input { [2000][32]f32 [2000]f32 [2000]f32 [2][32][32]f32 [32]f32 [32][32]f32 [32][32]f32 [2]f32 }
--- auto output
+--
+-- The cross-backend comparison tests the 1/n-scaled entry: futhark's
+-- output comparison widens its tolerance only with *positive* expected
+-- values (futhark-data Compare.tolerance has no abs), so raw
+-- large-magnitude negative outputs (X'Wr ~ -4e3) face a 0.002
+-- *absolute* tolerance that f32 reduction reassociation cannot meet.
+-- Scaling makes the comparison effectively relative.
 
 def dotprod (xs: []f32) (ys: []f32) : f32 =
   reduce (+) 0 (map2 (*) xs ys)
@@ -50,7 +53,7 @@ def hadamard_sum [p] (a: [p][p]f32) (b: [p][p]f32) : f32 =
 def quadform [p] (s: [p][p]f32) (beta: [p]f32) : f32 =
   dotprod beta (matvec s beta)
 
-entry reml_grad_eval [n][p][k]
+def reml_grad_eval [n][p][k]
     (x: [n][p]f32)        -- model matrix
     (z: [n]f32)           -- working response
     (w: [n]f32)           -- working weights (diagonal of W)
@@ -84,6 +87,20 @@ entry reml_grad_eval [n][p][k]
 
 -- Default entry so `futhark bench kernel.fut` with no entry filter
 -- still works; delegates to the real thing.
+-- ==
+-- entry: reml_grad_eval_scaled
+-- compiled random input { [2000][32]f32 [2000]f32 [2000]f32 [2][32][32]f32 [32]f32 [32][32]f32 [32][32]f32 [2]f32 }
+-- auto output
+entry reml_grad_eval_scaled [n][p][k]
+    (x: [n][p]f32) (z: [n]f32) (w: [n]f32) (s: [k][p][p]f32)
+    (beta: [p]f32) (v: [p][p]f32) (s_pinv: [p][p]f32) (lambdas: [k]f32)
+    : ([p][p]f32, [p]f32, f32, [p]f32, [k]f32) =
+  let (xtwx_m, xtwz, rss, xtwr, grad) =
+    reml_grad_eval x z w s beta v s_pinv lambdas
+  let c = 1 / f32.i64 n
+  in (map (map (* c)) xtwx_m, map (* c) xtwz, c * rss,
+      map (* c) xtwr, map (* c) grad)
+
 -- ==
 -- entry: main
 -- input { [[1.0f32,0.0f32],[0.0f32,1.0f32],[1.0f32,1.0f32]] [1.0f32,2.0f32,3.0f32]
