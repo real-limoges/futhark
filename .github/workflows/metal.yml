@@ -58,12 +58,14 @@ jobs:
       - name: futhark test (upstream SOAC subset)
         run: |
           "$FUTHARK" test --backend=metal \
-            tests/soacs/map0.fut \
             tests/soacs/map1.fut \
-            tests/soacs/reduce0.fut \
+            tests/soacs/map2.fut \
+            tests/soacs/map5.fut \
+            tests/soacs/mapreduce.fut \
+            tests/soacs/mapscan.fut \
             tests/soacs/reduce1.fut \
             tests/soacs/reduce4.fut \
-            tests/soacs/scan0.fut \
             tests/soacs/scan1.fut \
-            tests/soacs/scan2.fut \
+            tests/soacs/exscan0.fut \
+            tests/soacs/scan-with-map.fut \
             || true  # informational for now; tests_metal/ is the gate
