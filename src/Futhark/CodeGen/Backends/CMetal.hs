@@ -109,4 +109,12 @@ compileProg version prog = do
     metal_includes =
       [untrimming|
        #include <stdint.h>
+       // Handle types for the Metal shim (rts/metal/shim.cpp).  These
+       // must exist before the raw API declarations, which precede the
+       // backend implementation in the generated file.
+       struct futmtl_mem;
+       struct futmtl_kernel;
+       typedef struct futmtl_kernel* gpu_kernel;
+       typedef struct futmtl_mem* gpu_mem;
+       #define FUTHARK_METAL_HANDLE_TYPES_DEFINED
       |]

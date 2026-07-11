@@ -534,8 +534,8 @@ static void metal_size_setup(struct futhark_context *ctx) {
     if (*size_value == 0) {
       *size_value = default_value;
     } else if (max_value > 0 && *size_value > max_value) {
-      fprintf(stderr, "Note: Device limits %s to %zu (down from %zu)\n",
-              size_name, max_value, *size_value);
+      fprintf(stderr, "Note: Device limits %s to %lld (down from %lld)\n",
+              size_name, (long long)max_value, (long long)*size_value);
       *size_value = max_value;
     }
   }
@@ -735,8 +735,13 @@ void backend_context_teardown(struct futhark_context* ctx) {
 
 // Types.
 
+// The generated program pre-declares these at the very top (they
+// appear in the raw API before this header is pasted); the guard keeps
+// this header self-contained for standalone checking.
+#ifndef FUTHARK_METAL_HANDLE_TYPES_DEFINED
 typedef struct futmtl_kernel* gpu_kernel;
 typedef struct futmtl_mem* gpu_mem;
+#endif
 
 static void gpu_create_kernel(struct futhark_context *ctx,
                               gpu_kernel* kernel,
